@@ -10,6 +10,6 @@ export function CreateTerminal(arg1) {
   return window['go']['main']['App']['CreateTerminal'](arg1);
 }
 
-export function GetDetails() {
-  return window['go']['main']['App']['GetDetails']();
+export function GetDetails(arg1) {
+  return window['go']['main']['App']['GetDetails'](arg1);
 }

@@ -4,10 +4,10 @@
   - [x] cleanup the backend logic
   - [ ] keyboard shortcuts
     - [ ] read shortcut bindings from a json file
-    - [ ] split into 2 groups global or through xterm
   - [ ] tab switch logic
     - [ ] absolute positioning or overflow hide
 - [ ] new features
+  - [x] reset app on `vite:beforeUpdate` for `js` HMRs files
   - [ ] settings tab with a visualized json file configurator
   - [ ] integration scripts
     - [ ] powershell

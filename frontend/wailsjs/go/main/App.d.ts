@@ -6,4 +6,4 @@ export function ConsoleLog(arg1:string):Promise<void>;
 
 export function CreateTerminal(arg1:main.TerminalConfig):Promise<number>;
 
-export function GetDetails():Promise<string>;
+export function GetDetails(arg1:number):Promise<string>;

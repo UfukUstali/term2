@@ -40,6 +40,9 @@ const parentEl = ref<HTMLElement | null>(null);
 const scroll = useScroll(parentEl);
 
 watch(currentTerminal, async (val) => {
+  if (val === -1) {
+    return;
+  }
   const index = Array.from(keys.value.keys()).indexOf(val);
   console.log("scrolling to", index);
   console.log("old", parentEl.value?.scrollTop);

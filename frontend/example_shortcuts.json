@@ -1,0 +1,27 @@
+{
+  "copy": {
+    "key": "ctrl+c"
+  },
+  "paste": {
+    "key": "ctrl+v, command+v"
+  },
+  "cursorLeft": [
+    {
+      "chord": ["ctrl", "h"]
+    },
+    {
+      "key": "h",
+      "action": "",
+      "scope": "cursorAlreadyMoving"
+    }
+  ],
+  "cursorRight": [
+    {
+      "chord": ["ctrl, command", "l"]
+    },
+    {
+      "key": "l",
+      "scope": "cursorAlreadyMoving"
+    }
+  ]
+}

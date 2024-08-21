@@ -9,9 +9,25 @@ import {
   createTerminal,
   destroyTerminal,
 } from "@/store";
-import { ClipboardSetText } from "@@/wailsjs/runtime/runtime";
+import { ClipboardGetText, ClipboardSetText } from "@@/wailsjs/runtime/runtime";
+// import { ConsoleLog, GetIds } from "@@/wailsjs/go/main/App";
+// import Pty from "./pty";
 
 createApp(App).mount("#app");
+
+if (import.meta.hot) {
+  console.log("HMR enabled");
+  const hot = import.meta.hot;
+  hot.on("vite:beforeUpdate", (payload) => {
+    const update = payload.updates.some(
+      (update) => update.type === "js-update",
+    );
+    console.log("HMR update", update);
+    if (update) {
+      window.location.reload();
+    }
+  });
+}
 
 document.addEventListener("contextmenu", (event) => {
   // event.preventDefault();
@@ -93,6 +109,33 @@ document.addEventListener("keydown", (event) => {
         return false;
       }
       return true;
+
+    case "KeyC":
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const term = store.get(currentTerminal.value)!;
+        const selection = term.terminal.getSelection();
+        ClipboardSetText(selection);
+        // .then(() => console.log("Copied to clipboard"));
+        return false;
+      }
+      return true;
+
+    case "KeyV":
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const term = store.get(currentTerminal.value)!;
+        // const selection = term.terminal.getSelectionPosition(); // MAYBE
+        ClipboardGetText().then((text) => {
+          if (text) {
+            term.terminal.paste(text);
+          }
+        });
+        return false;
+      }
+      return true;
+
+    case "KeyX":
 
     default:
       return true;

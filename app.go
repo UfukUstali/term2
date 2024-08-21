@@ -43,6 +43,8 @@ const (
 	WebsocketPortKey key = 2
 )
 
+var idCounter int = 0
+
 type TerminalConfig struct {
 	Size    *PtySize `json:"size"`
 	Command string   `json:"command"`
@@ -126,7 +128,6 @@ func (a *App) startup(ctx context.Context) {
 			return
 		}
 
-		logger.Printf("New connection for terminal %d\n", id)
 		terminals := a.ctx.Value(TerminalsKey).(map[int]*Terminal)
 		term, ok := terminals[id]
 		if !ok {
@@ -136,7 +137,7 @@ func (a *App) startup(ctx context.Context) {
 
 		go func() {
 			defer conn.Close()
-			var authed bool = false
+			authed := false
 			for {
 				select {
 				case <-term.ctx.Done():
@@ -145,16 +146,16 @@ func (a *App) startup(ctx context.Context) {
 					_, message, err := conn.ReadMessage()
 					if err != nil {
 						logger.Println(err)
-						break
+						return
 					}
 					if !authed && message[0] != 'a' {
-						logger.Println("Auth required")
+						logger.Printf("Auth required %s\n", message)
 						continue
 					}
 					switch message[0] {
 					case 'a': // auth
 						authToken := string(message[1:])
-						if authed = authToken != a.ctx.Value(FrontendAuthKey); !authed {
+						if authed = authToken == a.ctx.Value(FrontendAuthKey); !authed {
 							logger.Printf("Invalid auth %s\n", authToken)
 							return
 						}
@@ -164,13 +165,11 @@ func (a *App) startup(ctx context.Context) {
 							term.toggle <- 0
 							term.paused = true
 						}
-						logger.Println("Paused")
 					case 'r': // resume
 						if term.paused {
 							term.toggle <- 0
 							term.paused = false
 						}
-						logger.Println("Resumed")
 					case 'w': // write
 						term.write <- message[1:]
 					case 's': // size
@@ -185,6 +184,7 @@ func (a *App) startup(ctx context.Context) {
 						})
 					case 'c': // close
 						term.exit <- 0
+						return
 					}
 				}
 			}
@@ -193,15 +193,25 @@ func (a *App) startup(ctx context.Context) {
 		go func() {
 			defer conn.Close()
 			ticker := time.NewTicker(10 * time.Second)
+			var data []byte
 			for {
 				select {
 				case <-term.ctx.Done():
-					conn.WriteMessage(ws.TextMessage, []byte("e")) // exit
-					return
-				case data := <-term.read:
-					conn.WriteMessage(ws.TextMessage, append([]byte("d"), data...)) // data
+					data = []byte("e") // exit
+				case data = <-term.read:
+					data = append([]byte("d"), data...) // data
 				case <-ticker.C:
-					conn.WriteMessage(ws.TextMessage, []byte("k")) // keepalive
+					data = []byte("k") // keepalive
+				}
+
+				if err := conn.WriteMessage(ws.TextMessage, data); err != nil {
+					if err != ws.ErrCloseSent {
+						logger.Println(err)
+					}
+					return
+				}
+				if data[0] == 'e' {
+					return
 				}
 			}
 		}()
@@ -230,9 +240,17 @@ func (a *App) shutdown(c context.Context) {
 	}
 }
 
-func (a *App) GetDetails() string {
+func (a *App) GetDetails(lastId int) string {
+	defer func() {
+		terminals := a.ctx.Value(TerminalsKey).(map[int]*Terminal)
+		// close all terminals except the last one
+		for id, term := range terminals {
+			if id != lastId {
+				term.exit <- 0
+			}
+		}
+	}()
 	details := fmt.Sprintf("%v:%v", (a.ctx.Value(FrontendAuthKey)), (a.ctx.Value(WebsocketPortKey)))
-	logger.Println(details)
 	return details
 }
 
@@ -286,7 +304,9 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 	ctx, cancel := context.WithCancelCause(a.ctx)
 
 	terminals := a.ctx.Value(TerminalsKey).(map[int]*Terminal)
-	id := len(terminals)
+
+	id := idCounter
+	idCounter++
 
 	terminals[id] = &Terminal{
 		pty,
@@ -299,8 +319,6 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 		ctx,
 		cancel,
 	}
-
-	fmt.Println("Terminal created with id:", id)
 
 	go readThread(ctx, reader, id)
 
@@ -325,15 +343,15 @@ func readThread(c context.Context, r io.Reader, id int) {
 		select {
 		case <-c.Done():
 			return
-		case <-term.toggle:
-			logger.Println("Paused")
-			<-term.toggle
-			logger.Println("Resumed")
+		case <-term.toggle: // pause
+			<-term.toggle // resume
 		default:
 			n, err := r.Read(buf)
 			if err != nil {
-				logger.Println(err)
-				term.exit <- 0
+				if err != io.EOF {
+					logger.Println(err)
+				}
+				return
 			}
 			term.read <- buf[:n]
 		}
@@ -353,7 +371,7 @@ func writeThread(c context.Context, w io.Writer, id int) {
 				n, err := w.Write(input)
 				if err != nil {
 					logger.Println(err)
-					term.exit <- 0
+					return
 				}
 				input = input[n:]
 			}
@@ -374,9 +392,9 @@ func waitThread(c context.Context, id int) {
 	}()
 
 	select {
-	case <-term.exit:
-		break
 	case <-c.Done():
+		break
+	case <-term.exit:
 		break
 	}
 	if !(c.Err() == ErrCleanup) {

@@ -1,13 +1,10 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-// import { invoke, clipboard } from "@tauri-apps/api";
-import { ClipboardGetText, EventsEmit, EventsOn } from "@@/wailsjs/runtime";
-import { ConsoleLog, CreateTerminal } from "@@/wailsjs/go/main/App";
-
-// import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { clipboardAddon as ClipboardAddon } from "./lib/utils";
+
+import { ConsoleLog, CreateTerminal } from "@@/wailsjs/go/main/App";
 import { main } from "@@/wailsjs/go/models";
+import { clipboardAddon as ClipboardAddon } from "@/lib/utils";
 import Pty from "@/pty";
 
 export type StoreEntry = {
@@ -59,8 +56,8 @@ export async function createTerminal() {
 
   const config = new main.TerminalConfig();
   config.command = "powershell.exe";
-  config.args = ["-NoLogo"];
-  // config.args = ["-NoLogo", "-NoProfile"];
+  // config.args = ["-NoLogo"];
+  config.args = ["-NoLogo", "-NoProfile"];
   config.cwd = import.meta.env.DEV ? "C:\\uni\\serbest\\term2" : undefined;
   const id = await CreateTerminal(config);
   const pty = await Pty.create(id);
@@ -88,7 +85,9 @@ export async function createTerminal() {
   };
 
   pty.onClose = () => {
-    destroyTerminal(id, true).catch(console.error);
+    destroyTerminal(id, {
+      fromExit: true,
+    });
   };
 
   store.set(id, {
@@ -101,51 +100,26 @@ export async function createTerminal() {
   });
   keys.value.set(id, "");
   currentTerminal.value = id;
-  return {
-    id,
-    terminal,
-  };
 }
 
 export const multilineModal = ref("closed");
 
-export async function writeTerminal(id: number, data: string) {
-  const { pty } = store.get(id)!;
-  if (data === "\u0016") {
-    // Ctrl + V
-    const text = await ClipboardGetText();
-    if (!text) return; // TODO: show toast
-    data = text;
-  }
-  if (data.includes("\n")) data = data.trim().replace("\n", "");
-  if (data.includes("\r") && !(data.length === 1)) {
-    multilineModal.value = `open:${data.split("\r").join("\n")}`;
-    await until(multilineModal).changed();
-    if (!(multilineModal.value === "accepted")) return;
-    multilineModal.value = "closed";
-
-    pty.write(data);
+export function destroyTerminal(id: number, options?: { fromExit?: boolean }) {
+  if (!store.has(id)) {
+    console.error(`Terminal with id ${id} not found`);
     return;
   }
-  pty.write(data);
-}
 
-export async function destroyTerminal(id: number, fromExit = false) {
+  const { fromExit = false } = options || {};
   const { terminal, pty } = store.get(id)!;
-  const ids = Array.from(store.keys());
-  if (store.size === 1) {
-    await createTerminal();
-  } else {
-    currentTerminal.value = ids[0] === id ? ids[1] : ids[0];
-  }
-  terminal.dispose();
 
   if (!fromExit) pty.destroy();
   keys.value.delete(id);
+  terminal.dispose();
   store.delete(id);
 }
 
-export async function resizeTerminal(id: number) {
+export function resizeTerminal(id: number) {
   const { fitAddon, terminal, pty } = store.get(id)!;
   fitAddon.fit();
   pty.resize(terminal.rows, terminal.cols);

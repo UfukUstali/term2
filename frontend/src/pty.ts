@@ -1,8 +1,11 @@
 import { GetDetails, ConsoleLog } from "@@/wailsjs/go/main/App";
 
-let detailsPromise: Promise<string[]> | string[] = GetDetails().then(
-  (details) => details.split(":"),
-);
+let details: ((lastId: number) => Promise<string[]>) | string[] = async (
+  lastId: number,
+) => {
+  const details = await GetDetails(lastId);
+  return details.split(":");
+};
 
 class Pty {
   private ws: WebSocket;
@@ -69,10 +72,13 @@ class Pty {
   }
 
   static async create(id: number) {
-    if (detailsPromise instanceof Promise) {
-      detailsPromise = await detailsPromise;
+    if (typeof details === "function") {
+      details = await details(id);
     }
-    return new Pty(id, parseInt(detailsPromise[1]), detailsPromise[0]);
+    if (details.length !== 2) {
+      throw new Error("invalid details");
+    }
+    return new Pty(id, parseInt(details[1]), details[0]);
   }
 
   public onData: ((data: string) => void) | undefined;
@@ -80,13 +86,11 @@ class Pty {
   public onClose: (() => void) | undefined;
 
   public pause() {
-    ConsoleLog("pause");
     this.ws.send("p"); // pause
     this.paused = true;
   }
 
   public resume() {
-    ConsoleLog("resume");
     this.ws.send("r"); // resume
     this.paused = false;
   }

@@ -1,10 +1,5 @@
 <script lang="ts" setup>
-import {
-  resizeTerminal,
-  writeTerminal,
-  StoreEntry,
-  currentTerminal,
-} from "@/store";
+import { resizeTerminal, StoreEntry, currentTerminal } from "@/store";
 import { IDisposable } from "@xterm/xterm";
 
 const props = defineProps<{
@@ -29,16 +24,10 @@ const maxScroll = ref(0);
 const isFullscreen = computed(() => props.terminal.mode.value === "fullscreen");
 
 onMounted(async () => {
-  props.terminal.terminal.onData(async (data) => {
-    if (!props.terminal) {
-      console.error("Terminal not initialized");
-      return;
-    }
-    await writeTerminal(props.id, data);
-  });
+  props.terminal.terminal.onData((s) => props.terminal.pty.write(s));
   props.terminal.terminal.open(termEl.value!);
-  // don't know why but we need to resize twice initially with timeout to get the correct behavior
   await props.terminal.pty.openPromise;
+  // don't know why but we need to resize twice initially with timeout to get the correct behavior
   if (props.id === 0 || import.meta.env.DEV) {
     termEl.value!.style.width = "50px";
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -46,7 +35,7 @@ onMounted(async () => {
     termEl.value!.removeAttribute("style");
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  await resizeTerminal(props.id);
+  resizeTerminal(props.id);
 });
 
 let unwatch: (() => void) | undefined;
@@ -54,10 +43,9 @@ let unwatch: (() => void) | undefined;
 onActivated(async () => {
   const unwatch1 = watchDebounced(
     [parentObserver.height, termObserver.width],
-    async (val) => {
+    (val) => {
       if (val[0] === 0 || val[1] === 0) return;
-      // console.log("resize", val);
-      await resizeTerminal(props.id);
+      resizeTerminal(props.id);
     },
     { immediate: true },
   );
@@ -143,10 +131,7 @@ onDeactivated(() => {
 
 <template>
   <div
-    :class="[
-      'h-full bg-transparent',
-      isFullscreen ? 'w-full' : 'TODO:change_later w-[10000px]',
-    ]"
+    :class="['h-full bg-transparent', isFullscreen ? 'w-full' : 'w-[10000px]']"
     ref="termEl"
   />
 </template>
