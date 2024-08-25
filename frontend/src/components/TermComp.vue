@@ -1,131 +1,42 @@
 <script lang="ts" setup>
-import { resizeTerminal, StoreEntry, currentTerminal } from "@/store";
-import { IDisposable } from "@xterm/xterm";
+import { resizeTerminal, StoreEntry } from "@/store";
 
 const props = defineProps<{
   id: number;
-  terminal: StoreEntry;
-  scroll: ReturnType<typeof useScroll>;
+  entry: StoreEntry;
 }>();
 
 const termEl = ref<HTMLElement | undefined>();
 const termElParent = computed(() => termEl.value?.parentElement);
 const termObserver = useElementSize(termEl);
 const parentObserver = useElementSize(termElParent);
-// const scroll = useScroll(termElParent);
 
-const scrollableWidth = computed(() => {
-  if (!termElParent.value) return 0;
-  return termElParent.value.scrollWidth - parentObserver.width.value;
-});
-
-const maxScroll = ref(0);
-
-const isFullscreen = computed(() => props.terminal.mode.value === "fullscreen");
+const isFullscreen = computed(() => props.entry.mode.value === "fullscreen");
 
 onMounted(async () => {
-  props.terminal.terminal.onData((s) => props.terminal.pty.write(s));
-  props.terminal.terminal.open(termEl.value!);
-  await props.terminal.pty.openPromise;
+  props.entry.terminal.onData((s) => props.entry.pty.write(s));
+  props.entry.terminal.onBinary((s) => props.entry.pty.write(s));
+  props.entry.terminal.open(termEl.value!);
+  await props.entry.pty.openPromise;
   // don't know why but we need to resize twice initially with timeout to get the correct behavior
   if (props.id === 0 || import.meta.env.DEV) {
     termEl.value!.style.width = "50px";
     await new Promise((resolve) => setTimeout(resolve, 150));
-    props.terminal.fitAddon.fit();
+    props.entry.fitAddon.fit();
     termEl.value!.removeAttribute("style");
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   resizeTerminal(props.id);
-});
+  props.entry.terminal.focus();
 
-let unwatch: (() => void) | undefined;
-
-onActivated(async () => {
-  const unwatch1 = watchDebounced(
+  watchDebounced(
     [parentObserver.height, termObserver.width],
     (val) => {
       if (val[0] === 0 || val[1] === 0) return;
       resizeTerminal(props.id);
     },
-    { immediate: true },
+    { immediate: false },
   );
-
-  let disposable: IDisposable | undefined;
-  let unwatch2: (() => void) | undefined;
-
-  const unwatch3 = watch(
-    isFullscreen,
-    (val) => {
-      if (!val) {
-        const left = termEl.value!.clientLeft;
-        const rows = termEl.value!.getElementsByClassName(
-          "xterm-rows",
-        )[0] as HTMLElement;
-        if (!rows) {
-          console.log("no xterm-rows");
-          return;
-        }
-        disposable = props.terminal.terminal.onRender(({ start, end }) => {
-          // console.log("start", start, "end", end);
-          for (let i = 0; i < rows.children.length; i++) {
-            if (i < start || i > end) continue;
-            const lastChild = rows.children[i].lastElementChild;
-            if (!lastChild) continue;
-            const right = lastChild.getBoundingClientRect().right;
-            // console.log("left", left, "right", right);
-            const contentWidth =
-              right - left - parentObserver.width.value + props.scroll.x.value;
-            // console.log("row", i, "scrollWidth", contentWidth);
-            if (!(contentWidth >= 9900 - parentObserver.width.value))
-              maxScroll.value = Math.max(maxScroll.value, contentWidth);
-          }
-        });
-
-        unwatch2 = watch(
-          props.scroll.x,
-          (val) => {
-            // console.log("scroll", val, "maxScroll", maxScroll.value);
-            if (val > maxScroll.value) {
-              props.scroll.x.value = maxScroll.value;
-            }
-          },
-          { immediate: true },
-        );
-      } else {
-        if (disposable) {
-          unwatch2 && unwatch2();
-          unwatch2 = undefined;
-          disposable.dispose();
-          disposable = undefined;
-        }
-        props.terminal.scrollPosition = undefined;
-      }
-    },
-    { immediate: true },
-  );
-
-  unwatch = () => {
-    unwatch1();
-    unwatch2 && unwatch2();
-    unwatch2 = undefined;
-    unwatch3();
-    if (disposable) {
-      disposable.dispose();
-      disposable = undefined;
-    }
-  };
-  if (!isFullscreen.value)
-    props.scroll.x.value = props.terminal.scrollPosition || 0;
-  // await resizeTerminal(props.id);
-  props.terminal.terminal.focus();
-});
-
-onDeactivated(() => {
-  if (unwatch) {
-    unwatch();
-    unwatch = undefined;
-  }
-  if (!isFullscreen.value) props.terminal.scrollPosition = props.scroll.x.value;
 });
 </script>
 

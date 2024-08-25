@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 
 	pty "github.com/UfukUstali/go-pty"
@@ -33,6 +34,11 @@ type Terminal struct {
 	exit    chan byte
 	ctx     context.Context
 	cancel  context.CancelCauseFunc
+}
+
+type Terminals struct {
+	terminals map[int]*Terminal
+	mutex     sync.Mutex
 }
 
 type key int
@@ -68,7 +74,10 @@ func NewApp() *App {
 }
 
 func (a *App) startup(ctx context.Context) {
-	a.ctx = context.WithValue(ctx, TerminalsKey, make(map[int]*Terminal))
+	a.ctx = context.WithValue(ctx, TerminalsKey, &Terminals{
+		make(map[int]*Terminal),
+		sync.Mutex{},
+	})
 
 	randBytes := make([]byte, 32)
 	rand.Read(randBytes)
@@ -128,8 +137,8 @@ func (a *App) startup(ctx context.Context) {
 			return
 		}
 
-		terminals := a.ctx.Value(TerminalsKey).(map[int]*Terminal)
-		term, ok := terminals[id]
+		terminals := a.ctx.Value(TerminalsKey).(*Terminals)
+		term, ok := terminals.terminals[id]
 		if !ok {
 			logger.Println("Terminal not found")
 			return
@@ -234,17 +243,17 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(c context.Context) {
-	terminals := c.Value(TerminalsKey).(map[int]*Terminal)
-	for _, term := range terminals {
+	terminals := c.Value(TerminalsKey).(*Terminals)
+	for _, term := range terminals.terminals {
 		term.exit <- 0
 	}
 }
 
 func (a *App) GetDetails(lastId int) string {
 	defer func() {
-		terminals := a.ctx.Value(TerminalsKey).(map[int]*Terminal)
+		terminals := a.ctx.Value(TerminalsKey).(*Terminals)
 		// close all terminals except the last one
-		for id, term := range terminals {
+		for id, term := range terminals.terminals {
 			if id != lastId {
 				term.exit <- 0
 			}
@@ -303,12 +312,13 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 
 	ctx, cancel := context.WithCancelCause(a.ctx)
 
-	terminals := a.ctx.Value(TerminalsKey).(map[int]*Terminal)
+	terminals := a.ctx.Value(TerminalsKey).(*Terminals)
 
 	id := idCounter
 	idCounter++
 
-	terminals[id] = &Terminal{
+	terminals.mutex.Lock()
+	terminals.terminals[id] = &Terminal{
 		pty,
 		process,
 		true,
@@ -319,6 +329,7 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 		ctx,
 		cancel,
 	}
+	terminals.mutex.Unlock()
 
 	go readThread(ctx, reader, id)
 
@@ -334,8 +345,8 @@ func (a *App) ConsoleLog(message string) {
 }
 
 func readThread(c context.Context, r io.Reader, id int) {
-	terminals := c.Value(TerminalsKey).(map[int]*Terminal)
-	term := terminals[id]
+	terminals := c.Value(TerminalsKey).(*Terminals)
+	term := terminals.terminals[id]
 
 	buf := make([]byte, 4096)
 	<-term.toggle
@@ -359,8 +370,8 @@ func readThread(c context.Context, r io.Reader, id int) {
 }
 
 func writeThread(c context.Context, w io.Writer, id int) {
-	terminals := c.Value(TerminalsKey).(map[int]*Terminal)
-	term := terminals[id]
+	terminals := c.Value(TerminalsKey).(*Terminals)
+	term := terminals.terminals[id]
 
 	for {
 		select {
@@ -380,8 +391,8 @@ func writeThread(c context.Context, w io.Writer, id int) {
 }
 
 func waitThread(c context.Context, id int) {
-	terminals := c.Value(TerminalsKey).(map[int]*Terminal)
-	term := terminals[id]
+	terminals := c.Value(TerminalsKey).(*Terminals)
+	term := terminals.terminals[id]
 
 	go func() {
 		term.process.Wait()
@@ -404,8 +415,8 @@ func waitThread(c context.Context, id int) {
 
 var ErrCleanup = errors.New("cleanup")
 
-func cleanup(terminals map[int]*Terminal, id int) {
-	term := terminals[id]
+func cleanup(terminals *Terminals, id int) {
+	term := terminals.terminals[id]
 	term.cancel(ErrCleanup)
 	close(term.toggle)
 	close(term.write)
@@ -413,5 +424,7 @@ func cleanup(terminals map[int]*Terminal, id int) {
 	close(term.exit)
 	term.process.Kill()
 	term.pty.Close()
-	delete(terminals, id)
+	terminals.mutex.Lock()
+	delete(terminals.terminals, id)
+	terminals.mutex.Unlock()
 }

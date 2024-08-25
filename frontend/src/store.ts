@@ -125,7 +125,7 @@ export function resizeTerminal(id: number) {
   pty.resize(terminal.rows, terminal.cols);
 }
 
-export const ctrlTabSelected = ref(-1);
+export const ctrlTabOpen = ref(false);
 
 // let xterm only know that it should not handle these keys
 function keyDownHandler(event: KeyboardEvent): boolean {

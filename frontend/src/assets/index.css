@@ -78,10 +78,6 @@
 }
 
 body {
-  background-image: url(./background.jpeg);
-  background-size: cover;
-  background-repeat: no-repeat;
-  background-position: center;
   scrollbar-color: #252525 transparent;
 }
 
@@ -97,4 +93,11 @@ body {
 html {
   height: 100%;
   overflow: hidden;
+}
+
+.bg-image {
+  background-image: url(./background.jpeg);
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
 }

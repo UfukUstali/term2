@@ -16,7 +16,7 @@ import {
   store,
   keys,
   multilineModal,
-  ctrlTabSelected,
+  ctrlTabOpen,
 } from "@/store";
 import { VisuallyHidden } from "radix-vue";
 
@@ -26,29 +26,22 @@ function setMultilineModel(value: string) {
 
 const multilineOpen = computed(() => multilineModal.value.startsWith("open:"));
 
-const ctrlTabOpen = computed(() => ctrlTabSelected.value !== -1);
-
 const termList = ref<HTMLElement | null>(null);
 
 function handleCtrlTab(id: number) {
   currentTerminal.value = id;
-  ctrlTabSelected.value = -1;
+  ctrlTabOpen.value = false;
 }
 
 const parentEl = ref<HTMLElement | null>(null);
 
-const scroll = useScroll(parentEl);
+const entry = computed(() => store.get(currentTerminal.value)!);
 
-watch(currentTerminal, async (val) => {
-  if (val === -1) {
-    return;
+watch(ctrlTabOpen, async (val) => {
+  if (!val) {
+    await nextTick();
+    store.get(currentTerminal.value)!.terminal.focus();
   }
-  const index = Array.from(keys.value.keys()).indexOf(val);
-  console.log("scrolling to", index);
-  console.log("old", parentEl.value?.scrollTop);
-  const newScrollTop = (parentEl.value?.clientHeight ?? 0) * Math.max(0, index);
-  console.log("new", newScrollTop);
-  scroll.y.value = -newScrollTop;
 });
 
 if (currentTerminal.value === -1) {
@@ -59,9 +52,16 @@ if (currentTerminal.value === -1) {
 </script>
 
 <template>
-  <div ref="parentEl" class="h-screen w-screen overflow-hidden bg-black/80">
-    <div class="h-screen overflow-x-auto p-1" v-for="[id] in keys" :key="id">
-      <TermComp :id="id" :terminal="store.get(id)!" :scroll="scroll" />
+  <div ref="parentEl" class="h-screen w-screen overflow-hidden">
+    <div
+      :class="[
+        'bg-image absolute left-0 top-0 h-screen w-full overflow-x-auto bg-black/80 p-1 bg-blend-multiply',
+        id === currentTerminal ? 'z-10' : '',
+      ]"
+      v-for="[id] in keys"
+      :key="id"
+    >
+      <TermComp :id="id" :entry />
     </div>
     <AlertDialog :open="multilineOpen"
       ><AlertDialogContent>
@@ -89,17 +89,18 @@ if (currentTerminal.value === -1) {
           content:
             'top-32 w-3/4 max-w-none border-slate-500 bg-white/5 backdrop-blur-3xl',
         }"
+        @close-auto-focus="(e) => e.preventDefault()"
       >
         <VisuallyHidden>
           <AlertDialogTitle>Switch Terminal</AlertDialogTitle>
         </VisuallyHidden>
         <button
           ref="termList"
-          v-for="([id, entry], index) in store"
+          v-for="[id, entry] in store"
           :key="id"
           :class="[
-            'inline-flex h-10 items-center justify-start gap-4 whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium outline-none transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50',
-            index === ctrlTabSelected ? 'ring-2 ring-white' : '',
+            'inline-flex h-10 items-center justify-start gap-4 whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium text-white outline-none transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50',
+            id === currentTerminal ? 'ring-2 ring-white' : '',
           ]"
           @click="handleCtrlTab(id)"
         >

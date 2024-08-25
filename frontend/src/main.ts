@@ -5,9 +5,10 @@ import "@/assets/index.css";
 import {
   store,
   currentTerminal,
-  ctrlTabSelected,
+  ctrlTabOpen as ctrlTabOpen,
   createTerminal,
   destroyTerminal,
+  keys,
 } from "@/store";
 import { ClipboardGetText, ClipboardSetText } from "@@/wailsjs/runtime/runtime";
 // import { ConsoleLog, GetIds } from "@@/wailsjs/go/main/App";
@@ -61,20 +62,16 @@ document.addEventListener("keydown", (event) => {
     case "Tab":
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
-        if (store.size < 2) return false;
-        if (ctrlTabSelected.value === -1) {
-          const keys = Array.from(store.keys());
-          const currentIndex = keys.indexOf(currentTerminal.value);
-          ctrlTabSelected.value =
+        if (keys.value.size < 2) return false;
+        ctrlTabOpen.value = true;
+        const ids = Array.from(keys.value.keys());
+        const currentIndex = ids.indexOf(currentTerminal.value);
+        currentTerminal.value =
+          ids[
             (event.shiftKey ?
               currentIndex - 1 + store.size
-            : currentIndex + 1) % keys.length;
-        } else {
-          ctrlTabSelected.value =
-            (event.shiftKey ?
-              ctrlTabSelected.value - 1 + store.size
-            : ctrlTabSelected.value + 1) % store.size;
-        }
+            : currentIndex + 1) % ids.length
+          ];
         return false;
       }
       return true;
@@ -145,10 +142,9 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keyup", (event) => {
   switch (event.code) {
     case "ControlLeft":
-      if (ctrlTabSelected.value !== -1) {
-        const keys = Array.from(store.keys());
-        currentTerminal.value = keys[ctrlTabSelected.value];
-        ctrlTabSelected.value = -1;
+      if (ctrlTabOpen.value) {
+        ctrlTabOpen.value = false;
+
         return false;
       }
       return true;

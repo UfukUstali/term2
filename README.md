@@ -4,8 +4,9 @@
   - [x] cleanup the backend logic
   - [ ] keyboard shortcuts
     - [ ] read shortcut bindings from a json file
-  - [ ] tab switch logic
-    - [ ] absolute positioning or overflow hide
+    - rewrite the logic
+  - [x] tab switch logic
+    - [x] absolute positioning or overflow hide
 - [ ] new features
   - [x] reset app on `vite:beforeUpdate` for `js` HMRs files
   - [ ] settings tab with a visualized json file configurator
