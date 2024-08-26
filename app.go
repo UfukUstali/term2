@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -28,10 +29,10 @@ type Terminal struct {
 	pty     pty.Pty
 	process pty.Child
 	paused  bool
-	toggle  chan byte
+	toggle  chan struct{}
 	read    chan []byte
 	write   chan []byte
-	exit    chan byte
+	exit    chan struct{}
 	ctx     context.Context
 	cancel  context.CancelCauseFunc
 }
@@ -67,10 +68,13 @@ type PtySize struct {
 
 type App struct {
 	ctx context.Context
+	dev bool
 }
 
-func NewApp() *App {
-	return &App{}
+func NewApp(dev bool) *App {
+	return &App{
+		dev: dev,
+	}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -83,23 +87,30 @@ func (a *App) startup(ctx context.Context) {
 	rand.Read(randBytes)
 	a.ctx = context.WithValue(a.ctx, FrontendAuthKey, hex.EncodeToString(randBytes))
 
-	port := 34373
-	for ; port < 65535; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	var certFile string
+	var keyFile string
+	if a.dev {
+		certFile = "./certs/localhost.pem"
+		keyFile = "./certs/localhost-key.pem"
+	} else {
+		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			continue
+			panic(err)
 		}
-		listener.Close()
-		break
+		certFile = homeDir + "/.term2/certs/localhost.pem"
+		keyFile = homeDir + "/.term2/certs/localhost-key.pem"
 	}
-	if port == 65535 {
-		logger.Println("Could not find a free port")
-	}
-	a.ctx = context.WithValue(a.ctx, WebsocketPortKey, port)
 
-	cert, err := tls.LoadX509KeyPair("./certs/localhost.pem", "./certs/localhost-key.pem")
+	if _, err := os.Stat(certFile); errors.Is(err, fs.ErrNotExist) {
+		panic(fmt.Sprintf("Certificate file not found under: %s. Read the README", certFile))
+	}
+	if _, err := os.Stat(keyFile); errors.Is(err, fs.ErrNotExist) {
+		panic(fmt.Sprintf("Key file not found under: %s. Read the README", keyFile))
+	}
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		logger.Println(err)
+		panic(err)
 	}
 
 	mux := http.NewServeMux()
@@ -154,7 +165,9 @@ func (a *App) startup(ctx context.Context) {
 				default:
 					_, message, err := conn.ReadMessage()
 					if err != nil {
-						logger.Println(err)
+						if !errors.Is(err, net.ErrClosed) {
+							logger.Println(err)
+						}
 						return
 					}
 					if !authed && message[0] != 'a' {
@@ -171,12 +184,12 @@ func (a *App) startup(ctx context.Context) {
 						conn.WriteMessage(ws.TextMessage, []byte("a"))
 					case 'p': // pause
 						if !term.paused {
-							term.toggle <- 0
+							term.toggle <- struct{}{}
 							term.paused = true
 						}
 					case 'r': // resume
 						if term.paused {
-							term.toggle <- 0
+							term.toggle <- struct{}{}
 							term.paused = false
 						}
 					case 'w': // write
@@ -192,7 +205,7 @@ func (a *App) startup(ctx context.Context) {
 							PixelHeight: 0,
 						})
 					case 'c': // close
-						term.exit <- 0
+						term.exit <- struct{}{}
 						return
 					}
 				}
@@ -214,7 +227,7 @@ func (a *App) startup(ctx context.Context) {
 				}
 
 				if err := conn.WriteMessage(ws.TextMessage, data); err != nil {
-					if err != ws.ErrCloseSent {
+					if !errors.Is(err, net.ErrClosed) {
 						logger.Println(err)
 					}
 					return
@@ -225,6 +238,20 @@ func (a *App) startup(ctx context.Context) {
 			}
 		}()
 	})
+
+	port := 34373
+	for ; port < 65535; port++ {
+		listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+		if err != nil {
+			continue
+		}
+		listener.Close()
+		break
+	}
+	if port == 65535 {
+		panic("Could not find a free port")
+	}
+	a.ctx = context.WithValue(a.ctx, WebsocketPortKey, port)
 
 	server := http.Server{
 		Addr:      fmt.Sprintf("localhost:%d", port),
@@ -245,7 +272,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) shutdown(c context.Context) {
 	terminals := c.Value(TerminalsKey).(*Terminals)
 	for _, term := range terminals.terminals {
-		term.exit <- 0
+		term.exit <- struct{}{}
 	}
 }
 
@@ -255,7 +282,7 @@ func (a *App) GetDetails(lastId int) string {
 		// close all terminals except the last one
 		for id, term := range terminals.terminals {
 			if id != lastId {
-				term.exit <- 0
+				term.exit <- struct{}{}
 			}
 		}
 	}()
@@ -284,6 +311,13 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 	cmd := exec.Command(config.Command, config.Args...)
 	if config.Cwd != nil {
 		cmd.Dir = *config.Cwd
+	} else if a.dev {
+		dir, err := os.Getwd()
+		if err != nil {
+			logger.Println(err)
+		} else {
+			cmd.Dir = dir
+		}
 	}
 	cmd.Env = append(cmd.Environ(), "TERM_PROGRAM=term2", "TERM=xterm-256color")
 
@@ -305,10 +339,10 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 		return -1, err
 	}
 
-	toggle := make(chan byte)
+	toggle := make(chan struct{})
 	read := make(chan []byte)
 	write := make(chan []byte)
-	exit := make(chan byte)
+	exit := make(chan struct{})
 
 	ctx, cancel := context.WithCancelCause(a.ctx)
 
@@ -342,6 +376,34 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 
 func (a *App) ConsoleLog(message string) {
 	logger.Println(message)
+}
+
+func (a *App) ReadConfigFile() string {
+	var fileAddress string
+	if a.dev {
+		fileAddress = "./keybinds.json"
+	} else {
+		fileAddress, err := os.UserHomeDir()
+		if err != nil {
+			logger.Fatalln(err)
+			return ""
+		}
+		fileAddress += "/.term2/keybinds.json"
+	}
+
+	file, err := os.ReadFile(fileAddress)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			err = os.WriteFile(fileAddress, []byte(DefaultKeybinds), 0644)
+			if err != nil {
+				logger.Fatalln(err)
+				return ""
+			}
+			return DefaultKeybinds
+		}
+		return ""
+	}
+	return string(file)
 }
 
 func readThread(c context.Context, r io.Reader, id int) {
@@ -399,7 +461,7 @@ func waitThread(c context.Context, id int) {
 		if c.Err() != nil {
 			return
 		}
-		term.exit <- 0
+		term.exit <- struct{}{}
 	}()
 
 	select {

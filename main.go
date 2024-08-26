@@ -2,6 +2,8 @@ package main
 
 import (
 	"embed"
+	"flag"
+	"fmt"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -13,8 +15,12 @@ import (
 var assets embed.FS
 
 func main() {
+
+	dev := flag.Bool("dev", false, "Enable development mode")
+	flag.Parse()
+	fmt.Println("Development mode:", *dev)
 	// Create an instance of the app structure
-	app := NewApp()
+	app := NewApp(*dev)
 
 	// Create application with options
 	err := wails.Run(&options.App{

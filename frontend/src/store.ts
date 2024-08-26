@@ -6,6 +6,7 @@ import { ConsoleLog, CreateTerminal } from "@@/wailsjs/go/main/App";
 import { main } from "@@/wailsjs/go/models";
 import { clipboardAddon as ClipboardAddon } from "@/lib/utils";
 import Pty from "@/pty";
+import { handleEvent, triggerAction } from "@/keyboard";
 
 export type StoreEntry = {
   terminal: Terminal;
@@ -19,7 +20,7 @@ export type StoreEntry = {
 
 export const store = new Map<number, StoreEntry>();
 
-export const keys = ref(new Map<number, string>());
+export const keys = ref(new Map<number, boolean>());
 
 export const currentTerminal = ref(-1);
 
@@ -39,14 +40,6 @@ export async function createTerminal() {
     allowTransparency: true,
     cursorBlink: true,
   });
-  terminal.attachCustomKeyEventHandler((event) => {
-    if (event.type === "keydown") {
-      return keyDownHandler(event);
-    } else if (event.type === "keyup") {
-      return keyUpHandler(event);
-    }
-    return true;
-  });
   const fitAddon = new FitAddon();
   const serializeAddon = new SerializeAddon();
   const clipboardAddon = ClipboardAddon();
@@ -55,11 +48,17 @@ export async function createTerminal() {
   terminal.loadAddon(clipboardAddon);
 
   const config = new main.TerminalConfig();
+  // config.command = "cmd.exe";
   config.command = "powershell.exe";
-  // config.args = ["-NoLogo"];
-  config.args = ["-NoLogo", "-NoProfile"];
-  config.cwd = import.meta.env.DEV ? "C:\\uni\\serbest\\term2" : undefined;
+  config.args = ["-NoLogo"];
+  // config.args = ["-NoLogo", "-NoProfile"];
+
   const id = await CreateTerminal(config);
+
+  terminal.attachCustomKeyEventHandler((event) => {
+    return handleEvent(event, id);
+  });
+
   const pty = await Pty.create(id);
 
   let written = 0;
@@ -98,7 +97,7 @@ export async function createTerminal() {
     mode: ref("normal"),
     logoUrl: "/powershell_icon.svg",
   });
-  keys.value.set(id, "");
+  keys.value.set(id, false);
   currentTerminal.value = id;
 }
 
@@ -113,6 +112,18 @@ export function destroyTerminal(id: number, options?: { fromExit?: boolean }) {
   const { fromExit = false } = options || {};
   const { terminal, pty } = store.get(id)!;
 
+  if (keys.value.size === 1) {
+    createTerminal().then(() => {
+      if (!fromExit) pty.destroy();
+      keys.value.delete(id);
+      terminal.dispose();
+      store.delete(id);
+    });
+    return;
+  }
+
+  triggerAction("previousTab", id);
+  triggerAction("closeTabSwitcher", id);
   if (!fromExit) pty.destroy();
   keys.value.delete(id);
   terminal.dispose();
@@ -126,47 +137,3 @@ export function resizeTerminal(id: number) {
 }
 
 export const ctrlTabOpen = ref(false);
-
-// let xterm only know that it should not handle these keys
-function keyDownHandler(event: KeyboardEvent): boolean {
-  switch (event.code) {
-    case "F5":
-      return false;
-
-    case "KeyF":
-      if (event.altKey) {
-        return false;
-      }
-    // fallthrough
-    case "KeyR":
-    case "KeyN":
-    case "KeyW":
-    case "Tab":
-      if (event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      return true;
-
-    case "KeyQ":
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
-        return false;
-      }
-      return true;
-
-    default:
-      return true;
-  }
-}
-
-function keyUpHandler(event: KeyboardEvent): boolean {
-  switch (event.code) {
-    case "ControlLeft":
-      if (event.ctrlKey || event.metaKey) {
-        return false;
-      }
-      return true;
-
-    default:
-      return true;
-  }
-}

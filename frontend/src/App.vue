@@ -44,6 +44,13 @@ watch(ctrlTabOpen, async (val) => {
   }
 });
 
+watch(currentTerminal, (val) => {
+  if (val !== -1) {
+    console.log("Focus terminal", val);
+    store.get(val)!.terminal.focus();
+  }
+});
+
 if (currentTerminal.value === -1) {
   // don't await
   createTerminal();
