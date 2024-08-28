@@ -5,6 +5,7 @@ import {
   currentTerminal,
   destroyTerminal,
   keys,
+  multilineModal,
   store,
 } from "@/store";
 import { ClipboardGetText, ClipboardSetText } from "@@/wailsjs/runtime/runtime";
@@ -88,11 +89,21 @@ const actions = new Map<
   ],
   [
     "copy",
-    (_, id) => {
+    (e, id) => {
       const term = store.get(id)!;
-      const selection = term.terminal.getSelection();
-      if (!selection) return true;
-      ClipboardSetText(selection);
+      let selection: string | null = null;
+      if (e && e.currentTarget === document) {
+        const browserSelection = window.getSelection();
+        if (
+          !browserSelection ||
+          browserSelection.type.toLowerCase() !== "range"
+        )
+          return true;
+        selection = browserSelection.toString();
+      } else {
+        selection = term.terminal.getSelection();
+      }
+      ClipboardSetText(selection).catch(console.error);
       return false;
     },
   ],
@@ -100,9 +111,22 @@ const actions = new Map<
     "paste",
     (_, id) => {
       const term = store.get(id)!;
-      ClipboardGetText().then((text) => {
-        term.terminal.paste(text);
-      });
+      // TODO: paste to cursor position overriding selection if present and if in a writable area(prompt) (possible after integration scripts)
+      ClipboardGetText()
+        .then(async (text) => {
+          const lines = text.split(/\r?\n/);
+          if (lines.length === 1) {
+            term.terminal.paste(text);
+            return;
+          }
+          multilineModal.value = lines;
+          await until(multilineModal).toMatch((v) => typeof v === "boolean");
+          if (multilineModal.value) {
+            term.terminal.paste(text);
+          }
+          multilineModal.value = false;
+        })
+        .catch(console.error);
       return false;
     },
   ],
@@ -384,6 +408,8 @@ export function handleEvent(e: KeyboardEvent | KeyEvent, id: number): boolean {
       temp = actions.get(entry.action)!(event, id);
       shortcuts = scopes.get(entry.setScope) ?? shortcuts;
       break;
+    case "undefined":
+      return true;
     default:
       console.error(`Invalid entry of type ${typeof entry}`);
       return true;

@@ -20,19 +20,18 @@ export function clipboardAddon() {
       });
     },
     readText: async () => {
-      let data = (await ClipboardGetText()) ?? "";
-      if (data.includes("\n")) data = data.trim().replace("\n", "");
-
-      if (data.includes("\r")) {
-        multilineModal.value = `open:${data.split("\r").join("\n")}`;
-        await until(multilineModal).changed();
-        if (!(multilineModal.value === "accepted")) {
-          return "";
-        }
-        multilineModal.value = "closed";
-        return data.endsWith("\r") ? data : `${data}\r`;
+      const text = (await ClipboardGetText()) ?? "";
+      const lines = text.split(/\r?\n/);
+      if (lines.length === 1) {
+        return text;
       }
-      return data;
+      multilineModal.value = lines;
+      await until(multilineModal).toMatch((v) => typeof v === "boolean");
+      if (!multilineModal.value) {
+        return "";
+      }
+      multilineModal.value = false;
+      return text;
     },
   });
 }

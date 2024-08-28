@@ -24,6 +24,10 @@ export const keys = ref(new Map<number, boolean>());
 
 export const currentTerminal = ref(-1);
 
+export const multilineModal = ref<boolean | string[]>(false);
+
+export const ctrlTabOpen = ref(false);
+
 const CALLBACK_BYTE_LIMIT = 100000;
 const HIGH = 5;
 const LOW = 2;
@@ -101,8 +105,6 @@ export async function createTerminal() {
   currentTerminal.value = id;
 }
 
-export const multilineModal = ref("closed");
-
 export function destroyTerminal(id: number, options?: { fromExit?: boolean }) {
   if (!store.has(id)) {
     console.error(`Terminal with id ${id} not found`);
@@ -135,5 +137,3 @@ export function resizeTerminal(id: number) {
   fitAddon.fit();
   pty.resize(terminal.rows, terminal.cols);
 }
-
-export const ctrlTabOpen = ref(false);

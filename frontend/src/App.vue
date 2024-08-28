@@ -20,11 +20,7 @@ import {
 } from "@/store";
 import { VisuallyHidden } from "radix-vue";
 
-function setMultilineModel(value: string) {
-  multilineModal.value = value;
-}
-
-const multilineOpen = computed(() => multilineModal.value.startsWith("open:"));
+const multilineOpen = computed(() => typeof multilineModal.value === "object");
 
 const termList = ref<HTMLElement | null>(null);
 
@@ -76,14 +72,19 @@ if (currentTerminal.value === -1) {
           <AlertDialogTitle>Multiline command detected</AlertDialogTitle>
           <AlertDialogDescription>
             You are about to run a multiline command. Do you want to continue?
-            <pre class="pt-2">{{ multilineModal.substring(5) }}</pre>
+            <pre
+              v-for="(line, index) in multilineModal"
+              :key="index"
+              class="pt-2"
+              >{{ line }}</pre
+            >
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel @click="setMultilineModel('closed')"
+          <AlertDialogCancel @click="multilineModal = false"
             >Cancel</AlertDialogCancel
           >
-          <AlertDialogAction @click="setMultilineModel('accepted')"
+          <AlertDialogAction @click="multilineModal = true"
             >Continue</AlertDialogAction
           >
         </AlertDialogFooter>

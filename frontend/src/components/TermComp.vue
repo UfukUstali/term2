@@ -14,8 +14,16 @@ const parentObserver = useElementSize(termElParent);
 const isFullscreen = computed(() => props.entry.mode.value === "fullscreen");
 
 onMounted(async () => {
-  props.entry.terminal.onData((s) => props.entry.pty.write(s));
-  props.entry.terminal.onBinary((s) => props.entry.pty.write(s));
+  props.entry.terminal.onData((s) => {
+    if (s === "\x16") {
+      triggerAction("paste", props.id);
+      return;
+    }
+    props.entry.pty.write(s);
+  });
+  props.entry.terminal.onBinary((s) => {
+    props.entry.pty.write(s);
+  });
   props.entry.terminal.open(termEl.value!);
   await props.entry.pty.openPromise;
   // don't know why but we need to resize twice initially with timeout to get the correct behavior
