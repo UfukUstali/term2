@@ -9,11 +9,16 @@
     - [x] absolute positioning or overflow hide
 - [ ] new features
   - [x] reset app on `vite:beforeUpdate` for `js` HMRs files
+  - [ ] link addon
   - [ ] settings tab with a visualized json file configurator
   - [ ] integration scripts
     - [ ] powershell
     - [ ] bash
     - [ ] zsh?
+- [ ] fixes
+  - [ ] reconnect after hibernation
+  - [ ] resource cleanup (after a panic)
+  - [ ] logs disappearing
 
 # For Usage or Development
 
