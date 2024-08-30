@@ -100,9 +100,10 @@ const actions = new Map<
         )
           return true;
         selection = browserSelection.toString();
-      } else {
+      } else if (term.terminal.hasSelection()) {
         selection = term.terminal.getSelection();
       }
+      if (selection === null) return true;
       ClipboardSetText(selection).catch(console.error);
       return false;
     },
