@@ -3,7 +3,8 @@ package main
 import (
 	"embed"
 	"flag"
-	"fmt"
+	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -15,15 +16,21 @@ import (
 var assets embed.FS
 
 func main() {
+	var err error
+	logFile, err = os.OpenFile("../log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		panic(err)
+	}
+	logger = log.New(logFile, "App ", log.Lshortfile|log.Lmsgprefix|log.Ltime)
 
-	dev := flag.Bool("dev", false, "Enable development mode")
 	flag.Parse()
-	fmt.Println("Development mode:", *dev)
+	dev := flag.Arg(0) == "dev"
+	logger.Printf("Development mode: %v", dev)
 	// Create an instance of the app structure
-	app := NewApp(*dev)
+	app := NewApp(dev)
 
 	// Create application with options
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:     "term2",
 		Width:     1024,
 		Height:    768,

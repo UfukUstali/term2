@@ -15,7 +15,6 @@ export type StoreEntry = {
   serializeAddon: SerializeAddon;
   mode: Ref<"normal" | "fullscreen">;
   logoUrl: string;
-  scrollPosition?: number;
 };
 
 export const store = new Map<number, StoreEntry>();
@@ -54,8 +53,8 @@ export async function createTerminal() {
   const config = new main.TerminalConfig();
   // config.command = "cmd.exe";
   config.command = "powershell.exe";
-  config.args = ["-NoLogo"];
-  // config.args = ["-NoLogo", "-NoProfile"];
+  // config.args = ["-NoLogo"];
+  config.args = ["-NoLogo", "-NoProfile"];
 
   const id = await CreateTerminal(config);
 
@@ -99,6 +98,7 @@ export async function createTerminal() {
     fitAddon,
     serializeAddon,
     mode: ref("normal"),
+    // TODO: title
     logoUrl: "/powershell_icon.svg",
   });
   keys.value.set(id, false);

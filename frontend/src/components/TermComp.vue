@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import { IDisposable } from "@xterm/xterm";
+import { triggerAction } from "@/keyboard";
 import { resizeTerminal, StoreEntry } from "@/store";
 
 const props = defineProps<{
@@ -13,6 +15,14 @@ const parentObserver = useElementSize(termElParent);
 
 const isFullscreen = computed(() => props.entry.mode.value === "fullscreen");
 
+const length = ref(0);
+
+watch(length, (val) => {
+  console.log("Length: ", val);
+});
+
+const disposables: IDisposable[] = [];
+
 onMounted(async () => {
   props.entry.terminal.onData((s) => {
     if (s === "\x16") {
@@ -25,7 +35,6 @@ onMounted(async () => {
     props.entry.pty.write(s);
   });
   props.entry.terminal.open(termEl.value!);
-  await props.entry.pty.openPromise;
   // don't know why but we need to resize twice initially with timeout to get the correct behavior
   if (props.id === 0 || import.meta.env.DEV) {
     termEl.value!.style.width = "50px";
@@ -34,8 +43,15 @@ onMounted(async () => {
     termEl.value!.removeAttribute("style");
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
+  await until(props.entry.pty.status).toBe("connected");
   resizeTerminal(props.id);
   props.entry.terminal.focus();
+
+  disposables.push(
+    props.entry.terminal.onRender(() => {
+      length.value = props.entry.terminal.buffer.active.length;
+    }),
+  );
 
   watchDebounced(
     [parentObserver.height, termObserver.width],
@@ -45,6 +61,10 @@ onMounted(async () => {
     },
     { immediate: false },
   );
+});
+
+onUnmounted(() => {
+  disposables.forEach((d) => d.dispose());
 });
 </script>
 

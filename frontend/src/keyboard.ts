@@ -9,7 +9,7 @@ import {
   store,
 } from "@/store";
 import { ClipboardGetText, ClipboardSetText } from "@@/wailsjs/runtime/runtime";
-import { ReadConfigFile } from "@@/wailsjs/go/main/App";
+import { ExitWithErr, ReadConfigFile } from "@@/wailsjs/go/main/App";
 
 const scopes = new Map<
   string,
@@ -412,7 +412,7 @@ export function handleEvent(e: KeyboardEvent | KeyEvent, id: number): boolean {
     case "undefined":
       return true;
     default:
-      console.error(`Invalid entry of type ${typeof entry}`);
+      console.error(`Invalid entry of type ${typeof entry}`, entry);
       return true;
   }
 
@@ -494,13 +494,22 @@ async function loadShortcuts() {
   );
 
   const file = await ReadConfigFile();
-  const data = fileSchema.safeParse(JSON.parse(file));
-  if (!data.success) {
-    data.error.issues.forEach((i) => console.error(i.message));
+  let data: z.infer<typeof fileSchema> | undefined;
+  try {
+    data = fileSchema.parse(JSON.parse(file));
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      await ExitWithErr(error.errors.map((e) => e.message).join("\n"));
+      return;
+    }
+    if (error instanceof SyntaxError) {
+      await ExitWithErr("Invalid JSON");
+      return;
+    }
     return;
   }
 
-  for (const { shortcut, action, scopes: _scopes, setScope } of data.data) {
+  for (const { shortcut, action, scopes: _scopes, setScope } of data) {
     const key = eventToShortcut(shortcut);
     if (key === Code.None) {
       continue;
@@ -527,6 +536,5 @@ async function loadShortcuts() {
     (scopes.size > 0 ? scopes.values().next().value : new Map());
 }
 
-loadShortcuts().then(() => {
-  console.log("Shortcuts loaded");
-});
+loadShortcuts();
+// .then(() =>{console.log("Shortcuts loaded")});

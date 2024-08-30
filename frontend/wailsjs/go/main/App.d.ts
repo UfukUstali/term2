@@ -6,6 +6,8 @@ export function ConsoleLog(arg1:string):Promise<void>;
 
 export function CreateTerminal(arg1:main.TerminalConfig):Promise<number>;
 
+export function ExitWithErr(arg1:string):Promise<void>;
+
 export function GetDetails(arg1:number):Promise<string>;
 
 export function ReadConfigFile():Promise<string>;

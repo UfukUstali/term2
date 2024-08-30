@@ -42,7 +42,6 @@ watch(ctrlTabOpen, async (val) => {
 
 watch(currentTerminal, (val) => {
   if (val !== -1) {
-    console.log("Focus terminal", val);
     store.get(val)!.terminal.focus();
   }
 });
@@ -100,7 +99,7 @@ if (currentTerminal.value === -1) {
         @close-auto-focus="(e) => e.preventDefault()"
       >
         <VisuallyHidden>
-          <AlertDialogTitle>Switch Terminal</AlertDialogTitle>
+          <AlertDialogTitle>Terminal Switcher</AlertDialogTitle>
         </VisuallyHidden>
         <button
           ref="termList"

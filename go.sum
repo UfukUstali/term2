@@ -1,5 +1,7 @@
 github.com/UfukUstali/go-pty v0.0.0-20240814135024-256d25b07b8b h1:6f39TLbk8s/TS2h+4EeL6D06wqHfARr/+T4BIpeJYXE=
 github.com/UfukUstali/go-pty v0.0.0-20240814135024-256d25b07b8b/go.mod h1:PEvjqguJA5am3sfdhA5FWcB5QIBN/b5BGlTHPYfRJoc=
+github.com/UfukUstali/go-pty v0.0.2 h1:qRb0Rw2nMQcrZ6F3CAF5ZOygT+wosUzlUG/QzVWidWM=
+github.com/UfukUstali/go-pty v0.0.2/go.mod h1:PEvjqguJA5am3sfdhA5FWcB5QIBN/b5BGlTHPYfRJoc=
 github.com/bep/debounce v1.2.1 h1:v67fRdBA9UQu2NhLFXrSg0Brw7CexQekrBwDMM8bzeY=
 github.com/bep/debounce v1.2.1/go.mod h1:H8yggRPQKLUhUoqrJC1bO2xNya7vanpDl7xR3ISbCJ0=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -57,6 +59,8 @@ github.com/valyala/fasttemplate v1.2.2 h1:lxLXG0uE3Qnshl9QyaK6XJxMXlQZELvChBOCmQ
 github.com/valyala/fasttemplate v1.2.2/go.mod h1:KHLXt3tVN2HBp8eijSv/kGJopbvo7S+qRAEEKiv+SiQ=
 github.com/wailsapp/go-webview2 v1.0.12 h1:VUT1Zw6qku+jRar38I0PRDNS9G3KMuvwaUXKeC7YOBM=
 github.com/wailsapp/go-webview2 v1.0.12/go.mod h1:Uk2BePfCRzttBBjFrBmqKGJd41P6QIHeV9kTgIeOZNo=
+github.com/wailsapp/go-webview2 v1.0.13 h1:I17/44xQ5/SujBaAUS4KMkWJYIoWCp35YxCEFWsMLKA=
+github.com/wailsapp/go-webview2 v1.0.13/go.mod h1:Uk2BePfCRzttBBjFrBmqKGJd41P6QIHeV9kTgIeOZNo=
 github.com/wailsapp/mimetype v1.4.1 h1:pQN9ycO7uo4vsUUuPeHEYoUkLVkaRntMnHJxVwYhwHs=
 github.com/wailsapp/mimetype v1.4.1/go.mod h1:9aV5k31bBOv5z6u+QP8TltzvNGJPmNJD4XlAL3U+j3o=
 github.com/wailsapp/wails/v2 v2.9.1 h1:irsXnoQrCpeKzKTYZ2SUVlRRyeMR6I0vCO9Q1cvlEdc=

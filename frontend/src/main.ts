@@ -8,13 +8,14 @@ import { handleEvent } from "@/keyboard";
 createApp(App).mount("#app");
 
 if (import.meta.hot) {
-  console.log("HMR enabled");
+  // console.log("HMR enabled");
   const hot = import.meta.hot;
   hot.on("vite:beforeUpdate", (payload) => {
     const update = payload.updates.some(
       (update) => update.type === "js-update",
     );
-    console.log("HMR update", update);
+    // console.log("HMR update", update);
+
     if (update) {
       window.location.reload();
     }

@@ -24,18 +24,29 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var logger = log.New(os.Stdout, "App ", log.Lshortfile|log.Lmsgprefix)
+var (
+	logFile   *os.File
+	logger    *log.Logger
+	idCounter int = 0
+)
+
+var (
+	causeProcessAwait    = errors.New("process await")
+	causeFrontendClose   = errors.New("frontend close")
+	causeClosingMultiple = errors.New("shutdown")
+)
 
 type Terminal struct {
-	pty     pty.Pty
-	process pty.Child
-	paused  bool
-	toggle  chan struct{}
-	read    chan []byte
-	write   chan []byte
-	exit    chan struct{}
-	ctx     context.Context
-	cancel  context.CancelCauseFunc
+	pty       pty.Pty
+	process   pty.Child
+	paused    bool
+	connected bool
+	cleanup   uint8
+	toggle    chan struct{}
+	read      chan []byte
+	write     chan []byte
+	ctx       context.Context
+	cancel    context.CancelCauseFunc
 }
 
 type Terminals struct {
@@ -46,12 +57,10 @@ type Terminals struct {
 type key int
 
 const (
-	TerminalsKey     key = 0
-	FrontendAuthKey  key = 1
-	WebsocketPortKey key = 2
+	TerminalsKey key = iota
+	FrontendAuthKey
+	WebsocketPortKey
 )
-
-var idCounter int = 0
 
 type TerminalConfig struct {
 	Size    *PtySize `json:"size"`
@@ -136,6 +145,39 @@ func (a *App) startup(ctx context.Context) {
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/health/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		// Allow specific methods
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		// Allow specific headers
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		// Handle preflight (OPTIONS) requests
+		if r.Method == "OPTIONS" {
+			return
+		}
+		logger.Println("Health check")
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			logger.Println("No or bad id provided")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		terminals := a.ctx.Value(TerminalsKey).(*Terminals)
+		term, ok := terminals.terminals[id]
+		if !ok {
+			logger.Println("Terminal not found")
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if term.connected {
+			logger.Println("Terminal already connected")
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	mux.HandleFunc("/pty/ws/{id}", func(w http.ResponseWriter, r *http.Request) {
 		// legend:
 		// handle incoming messages:
@@ -150,18 +192,6 @@ func (a *App) startup(ctx context.Context) {
 		//   d: data
 		//   e: exit
 		//   k: keepalive
-		upgrader := ws.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-		}
-
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			logger.Println(err)
-			return
-		}
-
 		id, err := strconv.Atoi(r.PathValue("id"))
 		if err != nil {
 			logger.Println("No or bad id provided")
@@ -173,8 +203,28 @@ func (a *App) startup(ctx context.Context) {
 		term, ok := terminals.terminals[id]
 		if !ok {
 			logger.Println("Terminal not found")
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		if term.connected {
+			logger.Println("Terminal already connected")
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+
+		upgrader := ws.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			logger.Println(err)
+			return
+		}
+		term.connected = true
+		term.cleanup = 0
+		logger.Println("Terminal connected")
 
 		go func() {
 			defer conn.Close()
@@ -186,13 +236,13 @@ func (a *App) startup(ctx context.Context) {
 				default:
 					_, message, err := conn.ReadMessage()
 					if err != nil {
-						if !errors.Is(err, net.ErrClosed) {
-							logger.Println(err)
-						}
+						logger.Println(err)
+						term.connected = false
+						logger.Println("Terminal disconnected")
 						return
 					}
-					if !authed && message[0] != 'a' {
-						logger.Printf("Auth required %s\n", message)
+					if (!authed) && message[0] != 'a' {
+						logger.Println("Not authed")
 						continue
 					}
 					switch message[0] {
@@ -226,8 +276,10 @@ func (a *App) startup(ctx context.Context) {
 							PixelHeight: 0,
 						})
 					case 'c': // close
-						term.exit <- struct{}{}
+						term.cancel(causeFrontendClose)
 						return
+					default:
+						logger.Printf("Unknown message %s\n", message)
 					}
 				}
 			}
@@ -248,9 +300,9 @@ func (a *App) startup(ctx context.Context) {
 				}
 
 				if err := conn.WriteMessage(ws.TextMessage, data); err != nil {
-					if !errors.Is(err, net.ErrClosed) {
-						logger.Println(err)
-					}
+					logger.Println(err)
+					term.connected = false
+					logger.Println("Terminal disconnected")
 					return
 				}
 				if data[0] == 'e' {
@@ -293,30 +345,81 @@ func (a *App) startup(ctx context.Context) {
 			logger.Println(err)
 		}
 	}()
-}
 
-func (a *App) shutdown(c context.Context) {
-	terminals := c.Value(TerminalsKey).(*Terminals)
-	for _, term := range terminals.terminals {
-		term.exit <- struct{}{}
-	}
-}
-
-func (a *App) GetDetails(lastId int) string {
-	defer func() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
 		terminals := a.ctx.Value(TerminalsKey).(*Terminals)
-		// close all terminals except the last one
-		for id, term := range terminals.terminals {
-			if id != lastId {
-				term.exit <- struct{}{}
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				terminals.mutex.Lock()
+				ids := make([]int, 0, len(terminals.terminals))
+				for id, term := range terminals.terminals {
+					if term.connected {
+						continue
+					}
+					term.cleanup++
+					if term.cleanup >= 2 {
+						ids = append(ids, id)
+					}
+				}
+				for _, id := range ids {
+					logger.Println("closing from cleanup")
+					terminals.terminals[id].cancel(causeClosingMultiple)
+					delete(terminals.terminals, id)
+				}
+				terminals.mutex.Unlock()
 			}
 		}
 	}()
-	details := fmt.Sprintf("%v:%v", (a.ctx.Value(FrontendAuthKey)), (a.ctx.Value(WebsocketPortKey)))
-	return details
+}
+
+func (a *App) shutdown(_ context.Context) {
+	terminals := a.ctx.Value(TerminalsKey).(*Terminals)
+	ids := make([]int, 0, len(terminals.terminals))
+
+	terminals.mutex.Lock()
+	for id := range terminals.terminals {
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		logger.Printf("closing from shutdown id: %d", id)
+		terminals.terminals[id].cancel(causeClosingMultiple)
+		delete(terminals.terminals, id)
+	}
+	terminals.mutex.Unlock()
+}
+
+func (a *App) GetDetails(lastId int) string {
+	go func() {
+		terminals := a.ctx.Value(TerminalsKey).(*Terminals)
+
+		terminals.mutex.Lock()
+		ids := make([]int, 0, len(terminals.terminals)-1)
+		for id := range terminals.terminals {
+			if id == lastId {
+				continue
+			}
+			ids = append(ids, id)
+		}
+		for _, id := range ids {
+			logger.Println("closing from GetDetails")
+			terminals.terminals[id].cancel(causeClosingMultiple)
+			delete(terminals.terminals, id)
+		}
+		terminals.mutex.Unlock()
+	}()
+	return fmt.Sprintf("%v:%v", (a.ctx.Value(FrontendAuthKey)), (a.ctx.Value(WebsocketPortKey)))
 }
 
 func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
+	id := idCounter
+	idCounter++
+
+	logger.Println("Creating terminal with id:", id)
+
 	var size pty.PtySize
 	if config.Size != nil {
 		size = pty.PtySize{
@@ -368,24 +471,21 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 	toggle := make(chan struct{})
 	read := make(chan []byte)
 	write := make(chan []byte)
-	exit := make(chan struct{})
 
 	ctx, cancel := context.WithCancelCause(a.ctx)
 
 	terminals := a.ctx.Value(TerminalsKey).(*Terminals)
-
-	id := idCounter
-	idCounter++
 
 	terminals.mutex.Lock()
 	terminals.terminals[id] = &Terminal{
 		pty,
 		process,
 		true,
+		false,
+		0,
 		toggle,
 		read,
 		write,
-		exit,
 		ctx,
 		cancel,
 	}
@@ -406,10 +506,11 @@ func (a *App) ConsoleLog(message string) {
 
 func (a *App) ReadConfigFile() string {
 	var fileAddress string
+	var err error
 	if a.dev {
 		fileAddress = "./keybinds.json"
 	} else {
-		fileAddress, err := os.UserHomeDir()
+		fileAddress, err = os.UserHomeDir()
 		if err != nil {
 			logger.Fatalln(err)
 			return ""
@@ -435,6 +536,15 @@ func (a *App) ReadConfigFile() string {
 		return ""
 	}
 	return string(file)
+}
+
+func (a *App) ExitWithErr(msg string) {
+	runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.ErrorDialog,
+		Title:   "Error",
+		Message: msg,
+	})
+	runtime.Quit(a.ctx)
 }
 
 func readThread(c context.Context, r io.Reader, id int) {
@@ -489,35 +599,25 @@ func waitThread(c context.Context, id int) {
 
 	go func() {
 		term.process.Wait()
-		if c.Err() != nil {
-			return
-		}
-		term.exit <- struct{}{}
+		term.cancel(causeProcessAwait)
 	}()
 
-	select {
-	case <-c.Done():
-		break
-	case <-term.exit:
-		break
-	}
-	if !(c.Err() == ErrCleanup) {
-		cleanup(terminals, id)
-	}
-}
+	<-c.Done()
 
-var ErrCleanup = errors.New("cleanup")
+	cause := term.ctx.Err()
 
-func cleanup(terminals *Terminals, id int) {
-	term := terminals.terminals[id]
-	term.cancel(ErrCleanup)
+	if cause != causeClosingMultiple {
+		terminals.mutex.Lock()
+		defer terminals.mutex.Unlock()
+		delete(terminals.terminals, id)
+	}
+
 	close(term.toggle)
 	close(term.write)
 	close(term.read)
-	close(term.exit)
-	term.process.Kill()
+
+	if cause != causeProcessAwait {
+		term.process.Kill()
+	}
 	term.pty.Close()
-	terminals.mutex.Lock()
-	delete(terminals.terminals, id)
-	terminals.mutex.Unlock()
 }

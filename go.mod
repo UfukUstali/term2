@@ -3,7 +3,7 @@ module term2
 go 1.22.6
 
 require (
-	github.com/UfukUstali/go-pty v0.0.0-20240814135024-256d25b07b8b
+	github.com/UfukUstali/go-pty v0.0.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/wailsapp/wails/v2 v2.9.1
 )
@@ -29,7 +29,7 @@ require (
 	github.com/tkrajina/go-reflector v0.5.6 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/wailsapp/go-webview2 v1.0.12 // indirect
+	github.com/wailsapp/go-webview2 v1.0.13 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
