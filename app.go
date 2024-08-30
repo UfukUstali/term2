@@ -21,6 +21,7 @@ import (
 
 	pty "github.com/UfukUstali/go-pty"
 	ws "github.com/gorilla/websocket"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var logger = log.New(os.Stdout, "App ", log.Lshortfile|log.Lmsgprefix)
@@ -95,22 +96,42 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			panic(err)
+			runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+				Type:    runtime.ErrorDialog,
+				Title:   "Error",
+				Message: "Couldn't find HOMEDIR",
+			})
+			runtime.Quit(a.ctx)
 		}
 		certFile = homeDir + "/.term2/certs/localhost.pem"
 		keyFile = homeDir + "/.term2/certs/localhost-key.pem"
 	}
 
 	if _, err := os.Stat(certFile); errors.Is(err, fs.ErrNotExist) {
-		panic(fmt.Sprintf("Certificate file not found under: %s. Read the README", certFile))
+		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Error",
+			Message: "Certificate file not found under: " + certFile + ". Read the README",
+		})
+		runtime.Quit(a.ctx)
 	}
 	if _, err := os.Stat(keyFile); errors.Is(err, fs.ErrNotExist) {
-		panic(fmt.Sprintf("Key file not found under: %s. Read the README", keyFile))
+		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Error",
+			Message: "Key file not found under: " + keyFile + ". Read the README",
+		})
+		runtime.Quit(a.ctx)
 	}
 
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		panic(err)
+		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Error",
+			Message: "Couldn't load certificate: " + err.Error(),
+		})
+		runtime.Quit(a.ctx)
 	}
 
 	mux := http.NewServeMux()
@@ -249,7 +270,12 @@ func (a *App) startup(ctx context.Context) {
 		break
 	}
 	if port == 65535 {
-		panic("Could not find a free port")
+		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Error",
+			Message: "Could not find a free port",
+		})
+		runtime.Quit(a.ctx)
 	}
 	a.ctx = context.WithValue(a.ctx, WebsocketPortKey, port)
 
@@ -396,7 +422,12 @@ func (a *App) ReadConfigFile() string {
 		if errors.Is(err, fs.ErrNotExist) {
 			err = os.WriteFile(fileAddress, []byte(DefaultKeybinds), 0644)
 			if err != nil {
-				logger.Fatalln(err)
+				runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+					Type:    runtime.ErrorDialog,
+					Title:   "Error",
+					Message: "Couldn't create default keybinds file",
+				})
+				runtime.Quit(a.ctx)
 				return ""
 			}
 			return DefaultKeybinds
