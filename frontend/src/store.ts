@@ -6,7 +6,7 @@ import { ConsoleLog, CreateTerminal } from "@@/wailsjs/go/main/App";
 import { main } from "@@/wailsjs/go/models";
 import { clipboardAddon as ClipboardAddon } from "@/lib/utils";
 import Pty from "@/pty";
-import { handleEvent, triggerAction } from "@/keyboard";
+import { handleEvent, Profile, triggerAction } from "@/config";
 
 export type StoreEntry = {
   terminal: Terminal;
@@ -14,7 +14,9 @@ export type StoreEntry = {
   fitAddon: FitAddon;
   serializeAddon: SerializeAddon;
   mode: Ref<"normal" | "fullscreen">;
+  title: string;
   logoUrl: string;
+  backgroundUrl: string;
 };
 
 export const store = new Map<number, StoreEntry>();
@@ -31,15 +33,11 @@ const CALLBACK_BYTE_LIMIT = 100000;
 const HIGH = 5;
 const LOW = 2;
 
-export async function createTerminal() {
+export async function createTerminal(profile: Profile) {
   const terminal = new Terminal({
-    fontFamily: "CaskaydiaCove NF Mono Regular",
-    fontSize: 18,
-    theme: {
-      background: "rgba(0, 0, 0, 0)",
-      selectionBackground: "#FFFFFF99",
-      selectionInactiveBackground: "#FFFFFF99",
-    },
+    fontFamily: profile.font,
+    fontSize: profile.fontSize,
+    theme: profile.theme,
     allowTransparency: true,
     cursorBlink: true,
   });
@@ -51,10 +49,9 @@ export async function createTerminal() {
   terminal.loadAddon(clipboardAddon);
 
   const config = new main.TerminalConfig();
-  // config.command = "cmd.exe";
-  config.command = "powershell.exe";
-  // config.args = ["-NoLogo"];
-  config.args = ["-NoLogo", "-NoProfile"];
+  config.command = profile.command;
+  config.args = profile.args;
+  config.cwd = profile.cwd;
 
   const id = await CreateTerminal(config);
 
@@ -98,8 +95,9 @@ export async function createTerminal() {
     fitAddon,
     serializeAddon,
     mode: ref("normal"),
-    // TODO: title
-    logoUrl: "/powershell_icon.svg",
+    title: profile.name,
+    logoUrl: profile.logo,
+    backgroundUrl: profile.backgroundImage,
   });
   keys.value.set(id, false);
   currentTerminal.value = id;
@@ -115,17 +113,11 @@ export function destroyTerminal(id: number, options?: { fromExit?: boolean }) {
   const { terminal, pty } = store.get(id)!;
 
   if (keys.value.size === 1) {
-    createTerminal().then(() => {
-      if (!fromExit) pty.destroy();
-      keys.value.delete(id);
-      terminal.dispose();
-      store.delete(id);
-    });
-    return;
+    triggerAction("newTerminal", id);
+  } else {
+    triggerAction("previousTab", id);
+    triggerAction("closeTabSwitcher", id);
   }
-
-  triggerAction("previousTab", id);
-  triggerAction("closeTabSwitcher", id);
   if (!fromExit) pty.destroy();
   keys.value.delete(id);
   terminal.dispose();

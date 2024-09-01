@@ -81,14 +81,9 @@ body {
   scrollbar-color: #252525 transparent;
 }
 
-@font-face {
-  font-family: "CaskaydiaCove NF Mono Regular";
-  src: url(./CaskaydiaCoveNerdFontMono-Regular.ttf);
-}
-
-.xterm-selection div {
+/* .xterm-selection div {
   background-color: rgb(255, 255, 255, 0.6) !important;
-}
+} */
 
 html {
   height: 100%;
@@ -96,7 +91,6 @@ html {
 }
 
 .bg-image {
-  background-image: url(./background.jpeg);
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;

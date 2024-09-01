@@ -5,6 +5,7 @@ go 1.22.6
 require (
 	github.com/UfukUstali/go-pty v0.0.2
 	github.com/gorilla/websocket v1.5.3
+	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/wailsapp/wails/v2 v2.9.1
 )
 

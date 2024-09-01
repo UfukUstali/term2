@@ -19,6 +19,7 @@ import {
   ctrlTabOpen,
 } from "@/store";
 import { VisuallyHidden } from "radix-vue";
+import { triggerAction } from "@/config";
 
 const multilineOpen = computed(() => typeof multilineModal.value === "object");
 
@@ -47,8 +48,7 @@ watch(currentTerminal, (val) => {
 });
 
 if (currentTerminal.value === -1) {
-  // don't await
-  createTerminal();
+  triggerAction("newTerminal", -1);
   // .then((id) => console.log("Created terminal", id.id))
 }
 </script>
@@ -60,6 +60,7 @@ if (currentTerminal.value === -1) {
         'bg-image absolute left-0 top-0 h-screen w-full overflow-x-auto bg-black/80 p-1 bg-blend-multiply',
         id === currentTerminal ? 'z-10' : '',
       ]"
+      :style="{ backgroundImage: `url(@term2${entry.backgroundUrl})` }"
       v-for="[id] in keys"
       :key="id"
     >
@@ -111,8 +112,8 @@ if (currentTerminal.value === -1) {
           ]"
           @click="handleCtrlTab(id)"
         >
-          <img class="size-6" :src="entry.logoUrl" />
-          <h1 class="text-2xl tracking-tight">Powershell</h1>
+          <img class="size-6" :src="`@term2${entry.logoUrl}`" />
+          <h1 class="text-2xl tracking-tight">{{ entry.title }}</h1>
         </button>
       </AlertDialogContent>
     </AlertDialog>

@@ -3,3 +3,5 @@ node_modules
 frontend/dist
 certs/*
 !certs
+config*.json
+!config.example.json

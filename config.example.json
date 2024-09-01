@@ -1,7 +1,3 @@
-package main
-
-const (
-	DefaultKeybinds string = `
 {
   "fonts": [
     {
@@ -12,7 +8,41 @@ const (
   "defaultProfile": "PowerShell",
   "profiles": [
     {
-      "name": "create your own profile here",
+      "name": "PowerShell",
+      "command": "powershell.exe",
+      "args": ["-NoLogo"],
+      "cwd": "C:/dir",
+      "font": "CaskaydiaCove NF Mono Regular",
+      "fontSize": 18,
+      "logo": "./powershell.svg",
+      "backgroundImage": "./background.jpeg",
+      "theme": {
+        "background": "rgba(0, 0, 0, 0)",
+        "selectionBackground": "#FFFFFF99",
+        "selectionInactiveBackground": "#FFFFFF99"
+      },
+      "shortcut": {
+        "code": "Digit1",
+        "ctrlKey": true
+      }
+    },
+    {
+      "name": "Ubuntu",
+      "command": "wsl.exe",
+      "args": ["-d", "Ubuntu", "-u", "user_name", "--cd", "~"],
+      "font": "CaskaydiaCove NF Mono Regular",
+      "fontSize": 18,
+      "logo": "./ubuntu.svg",
+      "backgroundImage": "./background.jpeg",
+      "theme": {
+        "background": "rgba(0, 0, 0, 0)",
+        "selectionBackground": "#FFFFFF99",
+        "selectionInactiveBackground": "#FFFFFF99"
+      },
+      "shortcut": {
+        "code": "Digit2",
+        "ctrlKey": true
+      }
     }
   ],
   "defaultScope": "default",
@@ -77,5 +107,3 @@ const (
     }
   ]
 }
-`
-)

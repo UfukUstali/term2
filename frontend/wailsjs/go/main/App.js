@@ -18,6 +18,10 @@ export function GetDetails(arg1) {
   return window['go']['main']['App']['GetDetails'](arg1);
 }
 
+export function OpenConfigFile() {
+  return window['go']['main']['App']['OpenConfigFile']();
+}
+
 export function ReadConfigFile() {
   return window['go']['main']['App']['ReadConfigFile']();
 }

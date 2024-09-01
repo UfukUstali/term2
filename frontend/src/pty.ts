@@ -155,7 +155,7 @@ class Pty {
   }
 
   private onerror() {
-    console.error("pty websocket error");
+    this.onClose && this.onClose();
     ConsoleLog("pty websocket error");
   }
 

@@ -15,12 +15,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	pty "github.com/UfukUstali/go-pty"
 	ws "github.com/gorilla/websocket"
+	"github.com/skratchdot/open-golang/open"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -47,6 +49,7 @@ type Terminal struct {
 	write     chan []byte
 	ctx       context.Context
 	cancel    context.CancelCauseFunc
+	mutex     sync.Mutex
 }
 
 type Terminals struct {
@@ -155,7 +158,6 @@ func (a *App) startup(ctx context.Context) {
 		if r.Method == "OPTIONS" {
 			return
 		}
-		logger.Println("Health check")
 		id, err := strconv.Atoi(r.PathValue("id"))
 		if err != nil {
 			logger.Println("No or bad id provided")
@@ -222,25 +224,27 @@ func (a *App) startup(ctx context.Context) {
 			logger.Println(err)
 			return
 		}
+		term.mutex.Lock()
 		term.connected = true
 		term.cleanup = 0
-		logger.Println("Terminal connected")
+		term.mutex.Unlock()
 
 		go func() {
 			defer conn.Close()
 			authed := false
 			for {
+				_, message, err := conn.ReadMessage()
+				if err != nil {
+					logger.Println(err)
+					term.mutex.Lock()
+					term.connected = false
+					term.mutex.Unlock()
+					return
+				}
 				select {
 				case <-term.ctx.Done():
 					return
 				default:
-					_, message, err := conn.ReadMessage()
-					if err != nil {
-						logger.Println(err)
-						term.connected = false
-						logger.Println("Terminal disconnected")
-						return
-					}
 					if (!authed) && message[0] != 'a' {
 						logger.Println("Not authed")
 						continue
@@ -293,7 +297,10 @@ func (a *App) startup(ctx context.Context) {
 				select {
 				case <-term.ctx.Done():
 					data = []byte("e") // exit
-				case data = <-term.read:
+				case data, ok = <-term.read:
+					if !ok {
+						return
+					}
 					data = append([]byte("d"), data...) // data
 				case <-ticker.C:
 					data = []byte("k") // keepalive
@@ -301,8 +308,9 @@ func (a *App) startup(ctx context.Context) {
 
 				if err := conn.WriteMessage(ws.TextMessage, data); err != nil {
 					logger.Println(err)
+					term.mutex.Lock()
 					term.connected = false
-					logger.Println("Terminal disconnected")
+					term.mutex.Unlock()
 					return
 				}
 				if data[0] == 'e' {
@@ -357,16 +365,16 @@ func (a *App) startup(ctx context.Context) {
 				terminals.mutex.Lock()
 				ids := make([]int, 0, len(terminals.terminals))
 				for id, term := range terminals.terminals {
-					if term.connected {
-						continue
+					term.mutex.Lock()
+					if !term.connected {
+						term.cleanup++
+						if term.cleanup >= 2 {
+							ids = append(ids, id)
+						}
 					}
-					term.cleanup++
-					if term.cleanup >= 2 {
-						ids = append(ids, id)
-					}
+					term.mutex.Unlock()
 				}
 				for _, id := range ids {
-					logger.Println("closing from cleanup")
 					terminals.terminals[id].cancel(causeClosingMultiple)
 					delete(terminals.terminals, id)
 				}
@@ -385,7 +393,6 @@ func (a *App) shutdown(_ context.Context) {
 		ids = append(ids, id)
 	}
 	for _, id := range ids {
-		logger.Printf("closing from shutdown id: %d", id)
 		terminals.terminals[id].cancel(causeClosingMultiple)
 		delete(terminals.terminals, id)
 	}
@@ -395,7 +402,6 @@ func (a *App) shutdown(_ context.Context) {
 func (a *App) GetDetails(lastId int) string {
 	go func() {
 		terminals := a.ctx.Value(TerminalsKey).(*Terminals)
-
 		terminals.mutex.Lock()
 		ids := make([]int, 0, len(terminals.terminals)-1)
 		for id := range terminals.terminals {
@@ -405,7 +411,6 @@ func (a *App) GetDetails(lastId int) string {
 			ids = append(ids, id)
 		}
 		for _, id := range ids {
-			logger.Println("closing from GetDetails")
 			terminals.terminals[id].cancel(causeClosingMultiple)
 			delete(terminals.terminals, id)
 		}
@@ -417,8 +422,6 @@ func (a *App) GetDetails(lastId int) string {
 func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 	id := idCounter
 	idCounter++
-
-	logger.Println("Creating terminal with id:", id)
 
 	var size pty.PtySize
 	if config.Size != nil {
@@ -447,6 +450,13 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 		} else {
 			cmd.Dir = dir
 		}
+	} else {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			logger.Println(err)
+		} else {
+			cmd.Dir = homeDir
+		}
 	}
 	cmd.Env = append(cmd.Environ(), "TERM_PROGRAM=term2", "TERM=xterm-256color")
 
@@ -474,10 +484,7 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 
 	ctx, cancel := context.WithCancelCause(a.ctx)
 
-	terminals := a.ctx.Value(TerminalsKey).(*Terminals)
-
-	terminals.mutex.Lock()
-	terminals.terminals[id] = &Terminal{
+	term := &Terminal{
 		pty,
 		process,
 		true,
@@ -488,14 +495,20 @@ func (a *App) CreateTerminal(config TerminalConfig) (int, error) {
 		write,
 		ctx,
 		cancel,
+		sync.Mutex{},
 	}
+
+	go waitThread(ctx, id, term)
+
+	go readThread(ctx, reader, read, toggle)
+
+	go writeThread(ctx, writer, write)
+
+	terminals := a.ctx.Value(TerminalsKey).(*Terminals)
+
+	terminals.mutex.Lock()
+	terminals.terminals[id] = term
 	terminals.mutex.Unlock()
-
-	go readThread(ctx, reader, id)
-
-	go writeThread(ctx, writer, id)
-
-	go waitThread(ctx, id)
 
 	return id, nil
 }
@@ -508,14 +521,19 @@ func (a *App) ReadConfigFile() string {
 	var fileAddress string
 	var err error
 	if a.dev {
-		fileAddress = "./keybinds.json"
+		fileAddress = "./config.json"
 	} else {
 		fileAddress, err = os.UserHomeDir()
 		if err != nil {
-			logger.Fatalln(err)
+			runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+				Type:    runtime.ErrorDialog,
+				Title:   "Error",
+				Message: "Couldn't find HOMEDIR",
+			})
+			runtime.Quit(a.ctx)
 			return ""
 		}
-		fileAddress += "/.term2/keybinds.json"
+		fileAddress += "/.term2/config.json"
 	}
 
 	file, err := os.ReadFile(fileAddress)
@@ -526,7 +544,7 @@ func (a *App) ReadConfigFile() string {
 				runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 					Type:    runtime.ErrorDialog,
 					Title:   "Error",
-					Message: "Couldn't create default keybinds file",
+					Message: "Couldn't create default config file",
 				})
 				runtime.Quit(a.ctx)
 				return ""
@@ -547,18 +565,47 @@ func (a *App) ExitWithErr(msg string) {
 	runtime.Quit(a.ctx)
 }
 
-func readThread(c context.Context, r io.Reader, id int) {
-	terminals := c.Value(TerminalsKey).(*Terminals)
-	term := terminals.terminals[id]
+func (a *App) OpenConfigFile() {
+	var fileAddress string
+	var err error
+	if a.dev {
+		cwd, err := os.Getwd()
+		if err != nil {
+			runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+				Type:    runtime.ErrorDialog,
+				Title:   "Error",
+				Message: "Couldn't find CWD",
+			})
+			runtime.Quit(a.ctx)
+			return
+		}
+		fileAddress = filepath.Join(cwd, "./config.json")
+	} else {
+		fileAddress, err = os.UserHomeDir()
+		if err != nil {
+			runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+				Type:    runtime.ErrorDialog,
+				Title:   "Error",
+				Message: "Couldn't find HOMEDIR",
+			})
+			runtime.Quit(a.ctx)
+			return
+		}
+		fileAddress += "/.term2/config.json"
+	}
+	open.Start(fileAddress)
+}
 
+func readThread(c context.Context, r io.Reader, channel chan<- []byte, toggle <-chan struct{}) {
+	defer close(channel)
+	<-toggle
 	buf := make([]byte, 4096)
-	<-term.toggle
 	for {
 		select {
 		case <-c.Done():
 			return
-		case <-term.toggle: // pause
-			<-term.toggle // resume
+		case <-toggle: // pause
+			<-toggle // resume
 		default:
 			n, err := r.Read(buf)
 			if err != nil {
@@ -567,20 +614,25 @@ func readThread(c context.Context, r io.Reader, id int) {
 				}
 				return
 			}
-			term.read <- buf[:n]
+			select {
+			case channel <- buf[:n]:
+				continue
+			case <-c.Done():
+				return
+			}
 		}
 	}
 }
 
-func writeThread(c context.Context, w io.Writer, id int) {
-	terminals := c.Value(TerminalsKey).(*Terminals)
-	term := terminals.terminals[id]
-
+func writeThread(c context.Context, w io.Writer, channel <-chan []byte) {
 	for {
 		select {
 		case <-c.Done():
 			return
-		case input := <-term.write:
+		case input, ok := <-channel:
+			if !ok {
+				return
+			}
 			for len(input) > 0 {
 				n, err := w.Write(input)
 				if err != nil {
@@ -593,10 +645,7 @@ func writeThread(c context.Context, w io.Writer, id int) {
 	}
 }
 
-func waitThread(c context.Context, id int) {
-	terminals := c.Value(TerminalsKey).(*Terminals)
-	term := terminals.terminals[id]
-
+func waitThread(c context.Context, id int, term *Terminal) {
 	go func() {
 		term.process.Wait()
 		term.cancel(causeProcessAwait)
@@ -604,17 +653,17 @@ func waitThread(c context.Context, id int) {
 
 	<-c.Done()
 
-	cause := term.ctx.Err()
+	cause := c.Err()
 
 	if cause != causeClosingMultiple {
+		terminals := c.Value(TerminalsKey).(*Terminals)
 		terminals.mutex.Lock()
-		defer terminals.mutex.Unlock()
 		delete(terminals.terminals, id)
+		terminals.mutex.Unlock()
 	}
 
 	close(term.toggle)
 	close(term.write)
-	close(term.read)
 
 	if cause != causeProcessAwait {
 		term.process.Kill()

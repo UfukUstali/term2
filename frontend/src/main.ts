@@ -1,11 +1,11 @@
 import { createApp } from "vue";
-import App from "./App.vue";
+import App from "@/App.vue";
 import "@xterm/xterm/css/xterm.css";
 import "@/assets/index.css";
 import { currentTerminal } from "@/store";
-import { handleEvent } from "@/keyboard";
+import { handleEvent, loadConfig } from "@/config";
 
-createApp(App).mount("#app");
+loadConfig().then(() => createApp(App).mount("#app"));
 
 if (import.meta.hot) {
   // console.log("HMR enabled");
@@ -22,11 +22,11 @@ if (import.meta.hot) {
   });
 }
 
-document.addEventListener("contextmenu", (event) => {
-  if (import.meta.env.PROD) {
+if (import.meta.env.PROD) {
+  document.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-  }
-});
+  });
+}
 
 document.addEventListener("keydown", (event) => {
   handleEvent(event, currentTerminal.value);

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
-import { IDisposable } from "@xterm/xterm";
-import { triggerAction } from "@/keyboard";
+// import { IDisposable } from "@xterm/xterm";
+import { triggerAction } from "@/config";
 import { resizeTerminal, StoreEntry } from "@/store";
 
 const props = defineProps<{
@@ -15,13 +15,13 @@ const parentObserver = useElementSize(termElParent);
 
 const isFullscreen = computed(() => props.entry.mode.value === "fullscreen");
 
-const length = ref(0);
+// const length = ref(0);
 
-watch(length, (val) => {
-  console.log("Length: ", val);
-});
+// watch(length, (val) => {
+//   console.log("Length: ", val);
+// });
 
-const disposables: IDisposable[] = [];
+// const disposables: IDisposable[] = [];
 
 onMounted(async () => {
   props.entry.terminal.onData((s) => {
@@ -47,11 +47,11 @@ onMounted(async () => {
   resizeTerminal(props.id);
   props.entry.terminal.focus();
 
-  disposables.push(
-    props.entry.terminal.onRender(() => {
-      length.value = props.entry.terminal.buffer.active.length;
-    }),
-  );
+  // disposables.push(
+  //   props.entry.terminal.onRender(() => {
+  //     length.value = props.entry.terminal.buffer.active.length;
+  //   }),
+  // );
 
   watchDebounced(
     [parentObserver.height, termObserver.width],
@@ -63,9 +63,9 @@ onMounted(async () => {
   );
 });
 
-onUnmounted(() => {
-  disposables.forEach((d) => d.dispose());
-});
+// onUnmounted(() => {
+//   disposables.forEach((d) => d.dispose());
+// });
 </script>
 
 <template>
