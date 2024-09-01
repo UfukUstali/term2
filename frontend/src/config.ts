@@ -9,7 +9,15 @@ import {
   store,
 } from "@/store";
 import { ClipboardGetText, ClipboardSetText } from "@@/wailsjs/runtime/runtime";
-import { ExitWithErr, ReadConfigFile } from "@@/wailsjs/go/main/App";
+import {
+  ExitWithErr,
+  ReadConfigFile,
+  OpenConfigFile,
+} from "@@/wailsjs/go/main/App";
+
+const profiles = new Map<string, Profile>();
+
+let defaultProfile = "";
 
 const scopes = new Map<
   string,
@@ -39,7 +47,7 @@ const actions = new Map<
   [
     "newTerminal",
     () => {
-      createTerminal();
+      createTerminal(profiles.get(defaultProfile)!);
       return false;
     },
   ],
@@ -128,6 +136,13 @@ const actions = new Map<
           multilineModal.value = false;
         })
         .catch(console.error);
+      return false;
+    },
+  ],
+  [
+    "openConfigFile",
+    () => {
+      OpenConfigFile().catch(console.error);
       return false;
     },
   ],
@@ -365,14 +380,12 @@ function eventToShortcut(e: KeyEvent): number {
   if (code === Code.None || code >= Code.MAX_VALUE) {
     return Code.None;
   }
-  if (code === Code.Control || code === Code.Shift || code === Code.Alt) {
-    return code;
-  }
-
   let result = code;
-  if (e.ctrlKey) result |= Modifier.Control;
-  if (e.shiftKey) result |= Modifier.Shift;
-  if (e.altKey) result |= Modifier.Alt;
+  if (!(code === Code.Control || code === Code.Shift || code === Code.Alt)) {
+    if (e.ctrlKey) result |= Modifier.Control;
+    if (e.shiftKey) result |= Modifier.Shift;
+    if (e.altKey) result |= Modifier.Alt;
+  }
   if (e.type === "keyup") result |= KeyUp;
   return result;
 }
@@ -403,7 +416,19 @@ export function handleEvent(e: KeyboardEvent | KeyEvent, id: number): boolean {
   let temp: boolean | undefined;
   switch (typeof entry) {
     case "string":
-      temp = actions.get(entry)!(event, id);
+      const handler = actions.get(entry) ?? profiles.get(entry);
+      switch (typeof handler) {
+        case "function":
+          temp = handler(event, id);
+          break;
+        case "object":
+          createTerminal(handler);
+          temp = false;
+          break;
+        case "undefined":
+          console.error(`Invalid action ${entry}`);
+          return true;
+      }
       break;
     case "object":
       temp = actions.get(entry.action)!(event, id);
@@ -433,65 +458,97 @@ export function triggerAction(actionKey: string, id: number) {
   return action(undefined, id);
 }
 
-async function loadShortcuts() {
-  const fileSchema = z.array(
-    z.object({
-      shortcut: z.object({
-        code: z
-          .string({
-            message: "code: not a string",
-          })
-          .refine((value) => codeToNumber.has(value), {
-            message: "code: invalid",
-          }),
-        type: z
-          .enum(["keydown", "keyup"], {
-            message: "type: invalid",
-          })
-          .optional()
-          .default("keydown"),
-        ctrlKey: z
-          .boolean({ message: "ctrlKey: not a boolean" })
-          .optional()
-          .default(false),
-        shiftKey: z
-          .boolean({
-            message: "shiftKey: not a boolean",
-          })
-          .optional()
-          .default(false),
-        altKey: z
-          .boolean({
-            message: "altKey: not a boolean",
-          })
-          .optional()
-          .default(false),
-      }),
-      action: z
-        .string({
-          message: "action: not a string",
-        })
-        .refine((value) => actions.has(value), {
-          message: "action: invalid",
-        }),
-      scopes: z
-        .array(
-          z.string({
-            message: "scopes: not a string",
-          }),
-          {
-            message: "scopes: not an array",
-          },
-        )
-        .optional()
-        .default(["default"]),
-      setScope: z
-        .string({
-          message: "setScope: not a string",
-        })
-        .optional(),
+const shortcutSchema = z.object({
+  code: z
+    .string({
+      message: "code: not a string",
+    })
+    .refine((value) => codeToNumber.has(value), {
+      message: "code: invalid",
     }),
-  );
+  type: z
+    .enum(["keydown", "keyup"], {
+      message: "type: invalid",
+    })
+    .optional()
+    .default("keydown"),
+  ctrlKey: z
+    .boolean({ message: "ctrlKey: not a boolean" })
+    .optional()
+    .default(false),
+  shiftKey: z
+    .boolean({
+      message: "shiftKey: not a boolean",
+    })
+    .optional()
+    .default(false),
+  altKey: z
+    .boolean({
+      message: "altKey: not a boolean",
+    })
+    .optional()
+    .default(false),
+});
+
+const profileSchema = z.object({
+  name: z.string(),
+  command: z.string(),
+  args: z.array(z.string()),
+  cwd: z.string().optional(),
+  font: z.string(),
+  fontSize: z.number(),
+  logo: z.string(),
+  backgroundImage: z.string(),
+  theme: z.object({
+    background: z.string(),
+    selectionBackground: z.string(),
+    selectionInactiveBackground: z.string(),
+  }),
+  shortcut: shortcutSchema,
+});
+
+export type Profile = Omit<z.infer<typeof profileSchema>, "shortcut">;
+
+export async function loadConfig() {
+  const fileSchema = z.object({
+    fonts: z.array(
+      z.object({
+        name: z.string(),
+        url: z.string(),
+      }),
+    ),
+    defaultProfile: z.string(),
+    profiles: z.array(profileSchema),
+    defaultScope: z.string(),
+    shortcuts: z.array(
+      z.object({
+        shortcut: shortcutSchema,
+        action: z
+          .string({
+            message: "action: not a string",
+          })
+          .refine((value) => actions.has(value), {
+            message: "action: invalid",
+          }),
+        scopes: z
+          .array(
+            z.string({
+              message: "scopes: not a string",
+            }),
+            {
+              message: "scopes: not an array",
+            },
+          )
+          .optional()
+          .default(["default"]),
+        setScope: z
+          .string({
+            message: "setScope: not a string",
+          })
+          .optional(),
+      }),
+    ),
+  });
 
   const file = await ReadConfigFile();
   let data: z.infer<typeof fileSchema> | undefined;
@@ -509,7 +566,15 @@ async function loadShortcuts() {
     return;
   }
 
-  for (const { shortcut, action, scopes: _scopes, setScope } of data) {
+  const defaultScope = shortcuts;
+  scopes.set(data.defaultScope, defaultScope);
+
+  for (const {
+    shortcut,
+    action,
+    scopes: _scopes,
+    setScope,
+  } of data.shortcuts) {
     const key = eventToShortcut(shortcut);
     if (key === Code.None) {
       continue;
@@ -531,10 +596,29 @@ async function loadShortcuts() {
     });
   }
 
-  shortcuts =
-    scopes.get("default") ??
-    (scopes.size > 0 ? scopes.values().next().value : new Map());
-}
+  for (const profile of data.profiles) {
+    defaultScope.set(eventToShortcut(profile.shortcut), profile.name);
+    // @ts-ignore
+    delete profile.shortcut;
+    profiles.set(profile.name, profile);
+  }
 
-loadShortcuts();
+  defaultProfile = data.defaultProfile;
+
+  shortcuts = scopes.get(data.defaultScope)!;
+
+  useStyleTag(
+    data.fonts
+      .map((font) => {
+        return `
+@font-face {
+font-family: '${font.name}';
+src: url('@term2${font.url}');
+}`;
+      })
+      .join("\n"),
+  );
+
+  return data;
+}
 // .then(() =>{console.log("Shortcuts loaded")});

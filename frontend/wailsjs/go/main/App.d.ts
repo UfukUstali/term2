@@ -10,4 +10,6 @@ export function ExitWithErr(arg1:string):Promise<void>;
 
 export function GetDetails(arg1:number):Promise<string>;
 
+export function OpenConfigFile():Promise<void>;
+
 export function ReadConfigFile():Promise<string>;
